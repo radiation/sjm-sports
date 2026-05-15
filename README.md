@@ -23,10 +23,56 @@ The app will be available at <http://127.0.0.1:8000>.
 The default database URL points at a local PostgreSQL database:
 
 ```bash
-SJM_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/sjm_sports
+DATABASE_URL=postgresql+psycopg://sjm:sjm@localhost:5432/sjm_sports
 ```
 
-Set that environment variable or put it in a local `.env` file before running migrations against a real database.
+Set that environment variable or put it in a local `.env` file before running migrations against a real database. See `.env.example` for local development defaults.
+
+## Docker Compose Harness
+
+Start the app, PostgreSQL, and migrations:
+
+```bash
+docker compose up --build app
+```
+
+The containerized app will be available at <http://127.0.0.1:8000>.
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d postgres
+```
+
+Run Alembic migrations through Docker Compose:
+
+```bash
+docker compose run --rm migrate
+```
+
+Build the web app image:
+
+```bash
+docker compose build app
+```
+
+Run the FastAPI app locally against the Compose database:
+
+```bash
+DATABASE_URL=postgresql+psycopg://sjm:sjm@localhost:5432/sjm_sports uv run uvicorn app.main:app --reload
+```
+
+Stop the harness:
+
+```bash
+docker compose down
+```
+
+Remove the database volume:
+
+```bash
+docker compose down -v
+```
 
 ## Database Migrations
 

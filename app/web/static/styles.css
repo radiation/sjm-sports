@@ -13,17 +13,143 @@ body {
   margin: 0;
 }
 
+a {
+  color: #1f5f8b;
+}
+
+.site-header {
+  border-bottom: 1px solid #d7dde5;
+  background: #ffffff;
+}
+
+.site-nav {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  display: flex;
+  gap: 18px;
+  padding: 14px 0;
+}
+
 .page-shell {
-  width: min(960px, calc(100% - 32px));
+  width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
   padding: 48px 0;
 }
 
-.home-panel {
+.home-panel,
+.content-section,
+.stat-card {
   border: 1px solid #d7dde5;
   border-radius: 8px;
   background: #ffffff;
+}
+
+.home-panel,
+.content-section {
   padding: 32px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.stat-card {
+  padding: 20px;
+}
+
+.stat-card span {
+  display: block;
+  color: #526171;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.stat-card strong {
+  font-size: 2rem;
+}
+
+.content-section {
+  margin-top: 20px;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+
+.year-list,
+.pagination,
+.link-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filter-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #526171;
+  font-size: 0.9rem;
+}
+
+input,
+select,
+button {
+  min-height: 38px;
+  border: 1px solid #c5ced8;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border-color: #1f5f8b;
+  color: #ffffff;
+  background: #1f5f8b;
+}
+
+.table-section {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e5e9ef;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: #526171;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.pagination {
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 18px;
 }
 
 .eyebrow {
@@ -43,4 +169,22 @@ h1 {
 p {
   margin: 0;
   line-height: 1.6;
+}
+
+@media (max-width: 820px) {
+  .dashboard-grid,
+  .filter-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .section-heading {
+    display: block;
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard-grid,
+  .filter-form {
+    grid-template-columns: 1fr;
+  }
 }

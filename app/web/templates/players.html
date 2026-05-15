@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="content-section">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Roster Search</p>
+        <h1>Players</h1>
+      </div>
+      <p>{{ results.total_results }} matching roster records</p>
+    </div>
+
+    <form class="filter-form" method="get" action="/players">
+      <label>
+        Year
+        <input name="year" value="{{ results.filters.year or '' }}" inputmode="numeric">
+      </label>
+      <label>
+        College
+        <input name="college" value="{{ results.filters.college or '' }}">
+      </label>
+      <label>
+        Conference
+        <input name="conference" value="{{ results.filters.conference or '' }}">
+      </label>
+      <label>
+        Position
+        <input name="position" value="{{ results.filters.position or '' }}">
+      </label>
+      <label>
+        Roster Year
+        <input name="roster_year" value="{{ results.filters.roster_year or '' }}">
+      </label>
+      <label>
+        Transfer
+        <select name="is_transfer">
+          <option value="" {% if results.filters.is_transfer is none %}selected{% endif %}>Any</option>
+          <option value="true" {% if results.filters.is_transfer is sameas true %}selected{% endif %}>Yes</option>
+          <option value="false" {% if results.filters.is_transfer is sameas false %}selected{% endif %}>No</option>
+        </select>
+      </label>
+      <label>
+        Hometown State
+        <input name="hometown_state" value="{{ results.filters.hometown_state or '' }}">
+      </label>
+      <label>
+        Page Size
+        <input name="page_size" value="{{ results.page_size }}" inputmode="numeric">
+      </label>
+      <button type="submit">Search</button>
+    </form>
+  </section>
+
+  <section class="content-section table-section">
+    <table>
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>College</th>
+          <th>Position</th>
+          <th>Roster Year</th>
+          <th>Height</th>
+          <th>Weight</th>
+          <th>B/T</th>
+          <th>Hometown</th>
+          <th>High School</th>
+          <th>Transfer</th>
+          <th>Links</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for player in results.results %}
+          <tr>
+            <td>{{ player.player_name }}</td>
+            <td>{{ player.college }}</td>
+            <td>{{ player.position or player.positions_raw or '' }}</td>
+            <td>{{ player.normalized_roster_year or player.roster_year or '' }}</td>
+            <td>{{ player.height_inches or '' }}</td>
+            <td>{{ player.weight_lbs or '' }}</td>
+            <td>{{ player.bats or '' }}{% if player.bats or player.throws %}/{% endif %}{{ player.throws or '' }}</td>
+            <td>
+              {{ player.hometown_city or '' }}{% if player.hometown_city and player.hometown_state %}, {% endif %}{{ player.hometown_state or '' }}{% if player.hometown_country %}, {{ player.hometown_country }}{% endif %}
+            </td>
+            <td>{{ player.high_school or '' }}</td>
+            <td>{% if player.is_transfer %}Yes{% else %}No{% endif %}</td>
+            <td class="link-list">
+              {% if player.profile_url %}<a href="{{ player.profile_url }}">Profile</a>{% endif %}
+              {% if player.roster_url %}<a href="{{ player.roster_url }}">Roster</a>{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="11">No players match the current filters.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <nav class="pagination" aria-label="Player search pagination">
+      {% if results.has_previous %}
+        <a href="{{ request.url.include_query_params(page=results.previous_page, page_size=results.page_size) }}">Previous</a>
+      {% endif %}
+      <span>Page {{ results.page }} of {{ results.total_pages }}</span>
+      {% if results.has_next %}
+        <a href="{{ request.url.include_query_params(page=results.next_page, page_size=results.page_size) }}">Next</a>
+      {% endif %}
+    </nav>
+  </section>
+{% endblock %}

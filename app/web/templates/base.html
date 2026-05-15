@@ -8,6 +8,12 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   </head>
   <body>
+    <header class="site-header">
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="/">Dashboard</a>
+        <a href="/players">Players</a>
+      </nav>
+    </header>
     <main class="page-shell">
       {% block content %}{% endblock %}
     </main>

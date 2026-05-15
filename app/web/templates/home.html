@@ -6,4 +6,36 @@
     <h1>{{ page_title }}</h1>
     <p>Internal roster, staff, transfer, and recruiting data tools.</p>
   </section>
+
+  <section class="dashboard-grid" aria-label="Roster summary">
+    <article class="stat-card">
+      <span>Colleges</span>
+      <strong>{{ dashboard.total_colleges }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>Players</span>
+      <strong>{{ dashboard.total_players }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>Roster Records</span>
+      <strong>{{ dashboard.total_roster_records }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>Transfers</span>
+      <strong>{{ dashboard.total_transfers }}</strong>
+    </article>
+  </section>
+
+  <section class="content-section">
+    <h2>Available Years</h2>
+    {% if dashboard.available_years %}
+      <div class="year-list">
+        {% for year in dashboard.available_years %}
+          <a href="/players?year={{ year }}">{{ year }}</a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>No roster years imported yet.</p>
+    {% endif %}
+  </section>
 {% endblock %}

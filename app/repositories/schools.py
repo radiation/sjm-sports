@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.schools import College, HighSchool
 from app.repositories.base import Repository
@@ -13,6 +13,9 @@ class CollegeRepository(Repository[College]):
     def add(self, college: College) -> College:
         self.session.add(college)
         return college
+
+    def count_all(self) -> int:
+        return self.session.scalar(select(func.count(College.id))) or 0
 
     def get_by_name(self, name: str) -> College | None:
         return self.session.scalar(select(College).where(College.name == name))

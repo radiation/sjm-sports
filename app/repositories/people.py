@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.people import Coach, Person, Player
@@ -30,6 +31,9 @@ class PlayerRepository(Repository[Player]):
     def add(self, player: Player) -> Player:
         self.session.add(player)
         return player
+
+    def count_all(self) -> int:
+        return self.session.scalar(select(func.count(Player.id))) or 0
 
     def create_for_person(
         self,

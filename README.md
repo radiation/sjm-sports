@@ -88,6 +88,26 @@ Create a new migration after model changes:
 uv run alembic revision --autogenerate -m "describe change"
 ```
 
+## Roster Import
+
+Import a cleaned roster workbook. XLSX files read the `Cleaned Data` worksheet by default:
+
+```bash
+uv run python -m app.importers.roster_spreadsheet data/raw/rosters.xlsx --year 2025
+```
+
+Override the worksheet name:
+
+```bash
+uv run python -m app.importers.roster_spreadsheet data/raw/rosters.xlsx --year 2025 --sheet "Cleaned Data"
+```
+
+CSV files with the same normalized columns are also supported:
+
+```bash
+uv run python -m app.importers.roster_spreadsheet data/raw/rosters.csv --year 2025
+```
+
 ## Quality Checks
 
 Format code:

@@ -11,6 +11,7 @@ from app.repositories.positions import PositionRepository
 from app.repositories.rosters import PlayerRosterRepository
 from app.repositories.schools import CollegeRepository, HighSchoolRepository
 from app.schemas.roster_import import RosterImportRow, RosterImportSummary
+from app.schemas.school_sources import SchoolSourceImportSummary, SchoolSourceRow
 from app.utils.roster_normalization import (
     NameParts,
     clean_text,
@@ -228,6 +229,57 @@ class RosterImportService:
 
     def _set_if_changed(self, target: object, attribute: str, value: object) -> bool:
         if value is None or getattr(target, attribute) == value:
+            return False
+        setattr(target, attribute, value)
+        return True
+
+
+class SchoolSourceImportService:
+    def __init__(self, colleges: CollegeRepository) -> None:
+        self.colleges = colleges
+
+    def import_rows(self, rows: Sequence[SchoolSourceRow]) -> SchoolSourceImportSummary:
+        summary = SchoolSourceImportSummary(rows_seen=len(rows))
+        for row in rows:
+            try:
+                created, changed = self._import_row(row)
+            except Exception as exc:  # noqa: BLE001
+                summary.rows_skipped += 1
+                summary.add_error(f"{row.school_id}: {exc}")
+                continue
+
+            summary.rows_imported += 1
+            if created:
+                summary.colleges_created += 1
+            elif changed:
+                summary.colleges_updated += 1
+        return summary
+
+    def _import_row(self, row: SchoolSourceRow) -> tuple[bool, bool]:
+        college, created = self.colleges.get_or_create_by_source_keys(
+            school_id=row.school_id,
+            ipeds_id=row.ipeds_id,
+            name=row.school_name,
+        )
+
+        changed = False
+        changed |= self._set_if_changed(college, "name", row.school_name)
+        changed |= self._set_if_changed(college, "ncaa_school_id", row.school_id)
+        changed |= self._set_if_changed(college, "ipeds_id", row.ipeds_id)
+        changed |= self._set_if_changed(college, "city", row.city)
+        changed |= self._set_if_changed(college, "state", row.state)
+        changed |= self._set_if_changed(college, "public_private", row.public_private)
+        changed |= self._set_if_changed(college, "division", row.division)
+        changed |= self._set_if_changed(college, "conference", row.conference)
+        changed |= self._set_if_changed(college, "roster_url", row.roster_url)
+        changed |= self._set_if_changed(college, "roster_vendor", row.roster_vendor)
+        changed |= self._set_if_changed(college, "is_sidearm", row.is_sidearm)
+        changed |= self._set_if_changed(college, "import_enabled", row.import_enabled)
+        changed |= self._set_if_changed(college, "source_notes", row.notes)
+        return created, changed
+
+    def _set_if_changed(self, target: object, attribute: str, value: object) -> bool:
+        if getattr(target, attribute) == value:
             return False
         setattr(target, attribute, value)
         return True

@@ -20,12 +20,43 @@ class CollegeRepository(Repository[College]):
     def get_by_name(self, name: str) -> College | None:
         return self.session.scalar(select(College).where(College.name == name))
 
+    def get_by_ncaa_school_id(self, school_id: str) -> College | None:
+        return self.session.scalar(select(College).where(College.ncaa_school_id == school_id))
+
+    def get_by_ipeds_id(self, ipeds_id: str) -> College | None:
+        return self.session.scalar(select(College).where(College.ipeds_id == ipeds_id))
+
+    def get_by_source_keys(
+        self, school_id: str | None, ipeds_id: str | None, name: str
+    ) -> College | None:
+        if school_id:
+            college = self.get_by_ncaa_school_id(school_id)
+            if college is not None:
+                return college
+        if ipeds_id:
+            college = self.get_by_ipeds_id(ipeds_id)
+            if college is not None:
+                return college
+        return self.get_by_name(name)
+
     def get_or_create_by_name(self, name: str) -> tuple[College, bool]:
         college = self.get_by_name(name)
         if college is not None:
             return college, False
 
         college = College(name=name)
+        self.session.add(college)
+        self.session.flush()
+        return college, True
+
+    def get_or_create_by_source_keys(
+        self, school_id: str | None, ipeds_id: str | None, name: str
+    ) -> tuple[College, bool]:
+        college = self.get_by_source_keys(school_id, ipeds_id, name)
+        if college is not None:
+            return college, False
+
+        college = College(name=name, ncaa_school_id=school_id, ipeds_id=ipeds_id)
         self.session.add(college)
         self.session.flush()
         return college, True

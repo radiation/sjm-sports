@@ -108,6 +108,36 @@ CSV files with the same normalized columns are also supported:
 uv run python -m app.importers.roster_spreadsheet data/raw/rosters.csv --year 2025
 ```
 
+## School Source Seed
+
+The source workbook lives locally at `data/raw/NCAA Roster Data Cleaned.xlsx` and is not committed. The checked-in seed file is `data/schools.csv`.
+
+Regenerate the seed CSV from the workbook:
+
+```bash
+uv run python scripts/build_school_sources.py
+```
+
+`scripts/build_school_sources.py` is deterministic and offline-friendly. It only reads the local workbook and does not make network requests.
+
+Import the seed CSV into the database:
+
+```bash
+uv run python -m app.importers.school_sources data/schools.csv
+```
+
+Optionally verify roster vendors from live roster HTML and write a reviewed CSV:
+
+```bash
+uv run python -m app.importers.verify_school_vendors data/schools.csv
+```
+
+By default that writes `data/schools.verified.csv`. Use `--in-place` to overwrite the input CSV.
+
+`is_sidearm` in the seed builder output is a deterministic first-pass URL heuristic. After the optional verifier runs, `is_sidearm` reflects the stronger HTML/content-based vendor check for rows that were successfully fetched.
+
+This slice only seeds and verifies school/source metadata. Player roster scraping/import from live roster pages remains intentionally out of scope here.
+
 ## Quality Checks
 
 Format code:

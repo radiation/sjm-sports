@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import csv
+from pathlib import Path
+
+from app.importers.school_sources import read_school_source_rows
 from app.models.schools import College
 from app.schemas.school_sources import SchoolSourceRow
 from app.services.imports import SchoolSourceImportService
@@ -82,3 +86,39 @@ def test_school_source_import_service_creates_and_updates_colleges() -> None:
     assert repository.colleges[0].name == "Example State University"
     assert repository.colleges[0].conference == "Example Conference"
     assert repository.colleges[0].source_notes == "verified"
+
+
+def test_read_school_source_rows_preserves_verified_csv_values(tmp_path: Path) -> None:
+    path = tmp_path / "schools.verified.csv"
+    with path.open("w", encoding="utf-8", newline="") as source_file:
+        writer = csv.DictWriter(
+            source_file,
+            fieldnames=[
+                "school_id",
+                "school_name",
+                "roster_url",
+                "roster_vendor",
+                "is_sidearm",
+                "import_enabled",
+                "notes",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "school_id": "S1",
+                "school_name": "Example State",
+                "roster_url": "https://example.edu/sports/baseball/roster",
+                "roster_vendor": "unknown",
+                "is_sidearm": "False",
+                "import_enabled": "True",
+                "notes": "vendor_verified_html: no known vendor marker",
+            }
+        )
+
+    rows = read_school_source_rows(path)
+
+    assert len(rows) == 1
+    assert rows[0].roster_vendor == "unknown"
+    assert rows[0].is_sidearm is False
+    assert rows[0].notes == "vendor_verified_html: no known vendor marker"

@@ -79,10 +79,12 @@ def test_vendor_verification_service_downgrades_heuristic_sidearm_without_html_m
     assert verified_rows[0].is_sidearm is False
     assert verified_rows[0].notes == "vendor_verified_html: no known vendor marker"
     assert summary.rows_checked == 1
+    assert summary.rows_verified == 1
     assert summary.unknown_count == 1
+    assert summary.vendor_counts == {"unknown": 1}
 
 
-def test_vendor_verification_service_handles_fetch_failures() -> None:
+def test_vendor_verification_service_handles_ssl_fetch_failures() -> None:
     row = SchoolSourceRow(
         school_id="S1",
         school_name="Example State",
@@ -93,7 +95,7 @@ def test_vendor_verification_service_handles_fetch_failures() -> None:
     )
 
     def fetch_html(_url: str) -> str:
-        raise TimeoutError("timeout")
+        raise RuntimeError("certificate verify failed")
 
     service = SchoolSourceVendorVerificationService(fetch_html=fetch_html)
 
@@ -101,9 +103,72 @@ def test_vendor_verification_service_handles_fetch_failures() -> None:
 
     assert verified_rows[0].roster_vendor == "sidearm"
     assert verified_rows[0].is_sidearm is True
-    assert verified_rows[0].notes == "vendor_verification_failed: timeout"
+    assert verified_rows[0].notes == "vendor_verification_failed: ssl_certificate_verify_failed"
     assert summary.failed_count == 1
-    assert summary.errors == ["S1: timeout"]
+    assert summary.rows_checked == 1
+    assert summary.rows_verified == 0
+    assert summary.vendor_counts == {}
+    assert summary.errors == ["S1: ssl_certificate_verify_failed"]
+
+
+def test_vendor_verification_summary_counts_reconcile() -> None:
+    rows = [
+        SchoolSourceRow(
+            school_id="S1",
+            school_name="Example State",
+            roster_url="https://example.edu/sports/baseball/roster",
+            roster_vendor="sidearm",
+            is_sidearm=True,
+            import_enabled=True,
+        ),
+        SchoolSourceRow(
+            school_id="S2",
+            school_name="Presto State",
+            roster_url="https://example.edu/baseball",
+            roster_vendor="unknown",
+            is_sidearm=False,
+            import_enabled=True,
+        ),
+        SchoolSourceRow(
+            school_id="S3",
+            school_name="No Url State",
+            roster_vendor="unknown",
+            is_sidearm=False,
+            import_enabled=False,
+        ),
+        SchoolSourceRow(
+            school_id="S4",
+            school_name="Broken State",
+            roster_url="https://broken.example/baseball",
+            roster_vendor="unknown",
+            is_sidearm=False,
+            import_enabled=True,
+        ),
+    ]
+
+    def fetch_html(url: str) -> str:
+        if "broken" in url:
+            raise TimeoutError("timeout")
+        if "example.edu/baseball" in url:
+            return "<html><body><footer>Powered by PrestoSports</footer></body></html>"
+        return "<html><body><footer>Powered by SIDEARM</footer></body></html>"
+
+    service = SchoolSourceVendorVerificationService(fetch_html=fetch_html)
+
+    _verified_rows, summary = service.verify_rows(rows)
+
+    assert summary.rows_seen == 4
+    assert summary.rows_without_url == 1
+    assert summary.rows_checked == 3
+    assert summary.rows_verified == 2
+    assert summary.failed_count == 1
+    assert summary.rows_seen == summary.rows_without_url + summary.rows_checked
+    assert summary.rows_checked == summary.rows_verified + summary.failed_count
+    assert summary.vendor_counts == {"presto": 1, "sidearm": 1}
+    assert sum(summary.vendor_counts.values()) == summary.rows_verified
+    assert summary.sidearm_count == 1
+    assert summary.presto_count == 1
+    assert summary.unknown_count == 0
 
 
 def test_write_school_source_csv_preserves_columns_and_row_count(tmp_path: Path) -> None:

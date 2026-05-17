@@ -120,7 +120,7 @@ uv run python scripts/build_school_sources.py
 
 `scripts/build_school_sources.py` is deterministic and offline-friendly. It only reads the local workbook and does not make network requests.
 
-Import the seed CSV into the database:
+Import the deterministic offline seed CSV into the database:
 
 ```bash
 uv run python -m app.importers.school_sources data/schools.csv
@@ -134,7 +134,21 @@ uv run python -m app.importers.verify_school_vendors data/schools.csv
 
 By default that writes `data/schools.verified.csv`. Use `--in-place` to overwrite the input CSV.
 
+The recommended reviewed import source is `data/schools.verified.csv` after you run vendor verification and review any failures or unknowns:
+
+```bash
+uv run python -m app.importers.school_sources data/schools.verified.csv
+```
+
+The importer accepts either CSV explicitly, so you can still import the deterministic offline seed when needed:
+
+```bash
+uv run python -m app.importers.school_sources data/schools.csv
+```
+
 `is_sidearm` in the seed builder output is a deterministic first-pass URL heuristic. After the optional verifier runs, `is_sidearm` reflects the stronger HTML/content-based vendor check for rows that were successfully fetched.
+
+TLS certificate verification remains enabled during vendor verification. SSL failures are recorded in the reviewed CSV notes, for example `vendor_verification_failed: ssl_certificate_verify_failed`.
 
 This slice only seeds and verifies school/source metadata. Player roster scraping/import from live roster pages remains intentionally out of scope here.
 

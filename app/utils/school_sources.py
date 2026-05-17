@@ -145,9 +145,28 @@ def merge_school_source_note(existing_note: object, new_note: str) -> str:
     return f"{existing_text}; {new_note}"
 
 
-def normalize_school_source_row(row: SchoolSourceRow) -> SchoolSourceRow:
+def normalize_vendor_verification_error(error: Exception) -> str:
+    message = clean_text(str(error))
+    if message is None:
+        return "fetch_failed"
+
+    message_key = message.casefold()
+    if "certificate verify failed" in message_key or "ssl_certificate_verify_failed" in message_key:
+        return "ssl_certificate_verify_failed"
+    if "timeout" in message_key or "timed out" in message_key:
+        return "timeout"
+    return message
+
+
+def normalize_school_source_row(
+    row: SchoolSourceRow, *, infer_vendor_from_url: bool = True
+) -> SchoolSourceRow:
     roster_url = clean_text(row.roster_url)
-    roster_vendor, is_sidearm = classify_roster_vendor_from_url(roster_url)
+    if infer_vendor_from_url:
+        roster_vendor, is_sidearm = classify_roster_vendor_from_url(roster_url)
+    else:
+        roster_vendor = clean_text(row.roster_vendor) or "unknown"
+        is_sidearm = row.is_sidearm
     return SchoolSourceRow(
         school_id=normalize_school_id(row.school_id) or row.school_id,
         ipeds_id=normalize_ipeds_id(row.ipeds_id),

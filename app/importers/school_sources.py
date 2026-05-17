@@ -19,7 +19,7 @@ def read_school_source_rows(path: Path) -> list[SchoolSourceRow]:
         rows: list[SchoolSourceRow] = []
         for raw_row in reader:
             row = SchoolSourceRow.model_validate(raw_row)
-            rows.append(normalize_school_source_row(row))
+            rows.append(normalize_school_source_row(row, infer_vendor_from_url=False))
         return rows
 
 

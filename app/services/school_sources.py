@@ -4,7 +4,11 @@ from collections.abc import Callable, Sequence
 
 from app.schemas.school_sources import SchoolSourceRow, SchoolSourceVendorVerificationSummary
 from app.utils.roster_normalization import clean_text
-from app.utils.school_sources import detect_roster_vendor, merge_school_source_note
+from app.utils.school_sources import (
+    detect_roster_vendor,
+    merge_school_source_note,
+    normalize_vendor_verification_error,
+)
 
 
 class SchoolSourceVendorVerificationService:
@@ -21,6 +25,7 @@ class SchoolSourceVendorVerificationService:
             verified_row = row
             roster_url = clean_text(row.roster_url)
             if roster_url is None:
+                summary.rows_without_url += 1
                 verified_rows.append(verified_row)
                 continue
 
@@ -28,7 +33,7 @@ class SchoolSourceVendorVerificationService:
             try:
                 html = self.fetch_html(roster_url)
             except Exception as exc:  # noqa: BLE001
-                error_message = clean_text(str(exc)) or "fetch failed"
+                error_message = normalize_vendor_verification_error(exc)
                 verified_row = row.model_copy(
                     update={
                         "notes": merge_school_source_note(
@@ -49,10 +54,7 @@ class SchoolSourceVendorVerificationService:
                         ),
                     }
                 )
-                if detection.vendor == "sidearm":
-                    summary.sidearm_count += 1
-                elif detection.vendor == "unknown":
-                    summary.unknown_count += 1
+                summary.record_vendor(detection.vendor)
 
             if verified_row != row:
                 summary.rows_updated += 1

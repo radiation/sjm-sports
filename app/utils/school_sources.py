@@ -162,6 +162,9 @@ def normalize_school_source_row(
     row: SchoolSourceRow, *, infer_vendor_from_url: bool = True
 ) -> SchoolSourceRow:
     roster_url = clean_text(row.roster_url)
+    import_enabled = (
+        row.import_enabled if "import_enabled" in row.model_fields_set else roster_url is not None
+    )
     if infer_vendor_from_url:
         roster_vendor, is_sidearm = classify_roster_vendor_from_url(roster_url)
     else:
@@ -179,7 +182,7 @@ def normalize_school_source_row(
         roster_url=roster_url,
         roster_vendor=roster_vendor,
         is_sidearm=is_sidearm,
-        import_enabled=roster_url is not None,
+        import_enabled=import_enabled,
         notes=clean_text(row.notes),
     )
 

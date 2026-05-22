@@ -306,4 +306,4 @@ S305,206604,Wright State University,Dayton,OH,Public,NCAA D1,Horizon League,http
 S306,206622,Xavier University,Cincinnati,OH,Private,NCAA D1,Big East Conference,https://goxavier.com/sports/baseball/roster,sidearm,True,True,vendor_verified_html: sidearm footer link
 S307,130794,Yale University,New Haven,CT,Private,NCAA D1,Ivy League,https://yalebulldogs.com/sports/baseball/roster,sidearm,True,True,vendor_verified_html: sidearm footer link
 S308,206695,Youngstown State University,Youngstown,OH,Public,NCAA D1,Horizon League,https://ysusports.com/sports/baseball/roster,sidearm,True,True,vendor_verified_html: sidearm footer link
-S633,224226,Dallas Baptist University,Dallas,TX,Private,NCAA D1,Conference USA,https://dbupatriots.com/sports/baseball/roster/2026,unknown,False,True,vendor_verification_failed: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1032)
+S633,224226,Dallas Baptist University,Dallas,TX,Private,NCAA D1,Conference USA,https://dbupatriots.com/sports/baseball/roster/2026,unknown,False,True,vendor_verification_failed: ssl_certificate_verify_failed

@@ -234,6 +234,64 @@ class RosterImportService:
         return True
 
 
+class SidearmRosterImportService:
+    def __init__(self, colleges: CollegeRepository, roster_imports: RosterImportService) -> None:
+        self.colleges = colleges
+        self.roster_imports = roster_imports
+
+    def import_rows(
+        self,
+        school: SchoolSourceRow,
+        rows: Sequence[RosterImportRow],
+        year: int,
+        source_url: str,
+    ) -> RosterImportSummary:
+        self._validate_school(school)
+        prepared_rows = [self._prepare_row(school, row, source_url) for row in rows]
+        summary = self.roster_imports.import_rows(prepared_rows, year)
+        college = self.colleges.get_by_name(school.school_name)
+        if college is None:
+            raise ValueError(f"college not found after import: {school.school_name}")
+        self._update_college_source_metadata(college, school, source_url)
+        return summary
+
+    def _validate_school(self, school: SchoolSourceRow) -> None:
+        if school.roster_vendor != "sidearm" or not school.is_sidearm:
+            raise ValueError("school is not a verified Sidearm source")
+        if not school.import_enabled:
+            raise ValueError("school import is disabled")
+
+    def _prepare_row(
+        self, school: SchoolSourceRow, row: RosterImportRow, source_url: str
+    ) -> RosterImportRow:
+        return row.model_copy(
+            update={
+                "college": school.school_name,
+                "college_state": school.state,
+                "college_division": school.division,
+                "conference": school.conference,
+                "roster_url": source_url,
+            }
+        )
+
+    def _update_college_source_metadata(
+        self, college: College, school: SchoolSourceRow, source_url: str
+    ) -> None:
+        college.name = school.school_name
+        college.city = school.city
+        college.state = school.state
+        college.public_private = school.public_private
+        college.division = school.division
+        college.conference = school.conference
+        college.ncaa_school_id = school.school_id
+        college.ipeds_id = school.ipeds_id
+        college.roster_url = source_url
+        college.roster_vendor = school.roster_vendor
+        college.is_sidearm = school.is_sidearm
+        college.import_enabled = school.import_enabled
+        college.source_notes = school.notes
+
+
 class SchoolSourceImportService:
     def __init__(self, colleges: CollegeRepository) -> None:
         self.colleges = colleges

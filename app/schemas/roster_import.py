@@ -51,3 +51,27 @@ class RosterImportSummary(BaseModel):
 
     def add_error(self, row_number: int | None, message: str) -> None:
         self.errors.append(RosterImportError(row_number=row_number, message=message))
+
+
+class SidearmBatchSchoolResult(BaseModel):
+    school_id: str
+    school_name: str
+    source_url: str | None = None
+    success: bool
+    summary: RosterImportSummary | None = None
+    error: str | None = None
+
+
+class SidearmBatchImportSummary(BaseModel):
+    schools_seen: int = 0
+    schools_selected: int = 0
+    schools_imported: int = 0
+    schools_failed: int = 0
+    results: list[SidearmBatchSchoolResult] = Field(default_factory=list)
+
+    def add_result(self, result: SidearmBatchSchoolResult) -> None:
+        self.results.append(result)
+        if result.success:
+            self.schools_imported += 1
+        else:
+            self.schools_failed += 1

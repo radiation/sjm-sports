@@ -163,23 +163,73 @@ rg '^S66,' data/schools.verified.csv
 Import one Sidearm baseball roster for one school and one season:
 
 ```bash
-uv run python -m app.importers.sidearm_roster --school-id S66 --season 2026
+uv run python -m app.importers.sidearm_roster --schools-csv data/schools.verified.csv --school-id S66 --season 2026
 ```
 
 Override the source CSV or roster URL if needed:
 
 ```bash
-uv run python -m app.importers.sidearm_roster --school-id S66 --season 2026 --sources-file data/schools.verified.csv
+uv run python -m app.importers.sidearm_roster --school-id S66 --season 2026 --schools-csv data/schools.verified.csv
 uv run python -m app.importers.sidearm_roster --school-id S66 --season 2026 --url https://guhoyas.com/sports/baseball/roster
 ```
 
-Import all verified, enabled Sidearm schools for one season:
+Run a small controlled batch instead of importing all verified Sidearm schools by default:
 
 ```bash
-uv run python -m app.importers.sidearm_roster --all-schools --season 2026
+uv run python -m app.importers.sidearm_roster --schools-csv data/schools.verified.csv --season 2026 --limit 5
 ```
 
-That batch mode reads `data/schools.verified.csv`, filters to rows with `roster_vendor=sidearm`, `is_sidearm=True`, `import_enabled=True`, and a non-empty `roster_url`, then processes each school independently so one failure does not abort the whole run.
+Dry-run the same batch without committing database changes:
+
+```bash
+uv run python -m app.importers.sidearm_roster --schools-csv data/schools.verified.csv --season 2026 --limit 5 --dry-run
+```
+
+When you are ready for a larger run, scale up deliberately:
+
+```bash
+uv run python -m app.importers.sidearm_roster --schools-csv data/schools.verified.csv --season 2026 --limit 25
+uv run python -m app.importers.sidearm_roster --schools-csv data/schools.verified.csv --season 2026 --all-schools
+```
+
+Batch mode reads `data/schools.verified.csv`, filters to rows with `roster_vendor=sidearm`, `is_sidearm=True`, `import_enabled=True`, and a non-empty `roster_url`, then processes each school independently so one failure does not abort the whole run.
+
+The recommended rollout is:
+
+```text
+1. Georgetown or another known-good single school
+2. A 5-school batch
+3. A 25-school batch
+4. Review failures
+5. Only then run --all-schools
+```
+
+Batch summaries report:
+
+```text
+schools_seen
+schools_eligible
+schools_attempted
+schools_imported
+schools_failed
+players_seen
+players_imported
+players_updated
+roster_rows_created
+roster_rows_updated
+failures_by_reason
+failure_report_path
+```
+
+`schools_seen` is the total CSV row count. `schools_eligible` is the count that passed the Sidearm filters. `schools_attempted` is the number actually processed after `--limit` or `--school-id` selection. `failure_report_path` is present when a JSON failure report is written.
+
+Batch failures are grouped by reason and written to JSON when any school fails. The default path is:
+
+```text
+data/import_runs/sidearm_roster_failures_2026.json
+```
+
+Review the JSON report after each controlled batch to separate stale URLs, SSL issues, and parser-template failures before increasing batch size.
 
 The current Sidearm parser supports two template families:
 
@@ -216,13 +266,16 @@ Use these commands to rerun imports while debugging parser changes:
 
 ```bash
 uv run python -m app.importers.sidearm_roster --school-id S66 --season 2026
-uv run python -m app.importers.sidearm_roster --all-schools --season 2026
+uv run python -m app.importers.sidearm_roster --season 2026 --limit 5
 ```
 
 Common failure reasons in batch output:
 
 ```text
-http_404: the reviewed roster URL is stale, the domain changed, or the site is blocking the importer client
+stale_url_or_not_found: the reviewed roster URL is stale, the domain changed, or the page returned HTTP 404
+ssl_certificate_verify_failed: TLS verification failed and was not bypassed
+timeout: the roster page did not respond before the importer timeout
+fetch_failed: another HTTP transport or non-404 status failure occurred
 no_supported_sidearm_roster_template_found: the page does not match either supported Sidearm template family
 person_card_template_detected_but_no_cards: the newer Sidearm roster container was present but no player cards were found
 legacy_template_detected_but_no_rows: the legacy Sidearm template was detected but no player rows parsed
@@ -232,7 +285,7 @@ title_mismatch: recorded as a diagnostic warning when expected season text is mi
 
 Current provenance is stored through existing fields and timestamps: school source metadata on `colleges`, plus `roster_url`, `profile_url`, and model timestamps on imported roster rows.
 
-Out of scope for this slice: scheduling, PrestoSports parsing, stale URL discovery, unknown-vendor parsing, and broader cross-school identity matching.
+Out of scope for this slice: scheduling, all-vendor ingestion, PrestoSports parsing, stale URL repair or discovery, unknown-vendor parsing, and broader cross-school identity matching.
 
 ## Quality Checks
 

@@ -59,19 +59,38 @@ class SidearmBatchSchoolResult(BaseModel):
     source_url: str | None = None
     success: bool
     summary: RosterImportSummary | None = None
+    failure_reason: str | None = None
     error: str | None = None
 
 
 class SidearmBatchImportSummary(BaseModel):
     schools_seen: int = 0
+    schools_eligible: int = 0
+    schools_attempted: int = 0
     schools_selected: int = 0
     schools_imported: int = 0
     schools_failed: int = 0
+    players_seen: int = 0
+    players_imported: int = 0
+    players_updated: int = 0
+    roster_rows_created: int = 0
+    roster_rows_updated: int = 0
+    dry_run: bool = False
+    failures_by_reason: dict[str, int] = Field(default_factory=dict)
+    failure_report_path: str | None = None
     results: list[SidearmBatchSchoolResult] = Field(default_factory=list)
 
     def add_result(self, result: SidearmBatchSchoolResult) -> None:
         self.results.append(result)
         if result.success:
             self.schools_imported += 1
+            if result.summary is not None:
+                self.players_seen += result.summary.rows_seen
+                self.players_imported += result.summary.rows_imported
+                self.players_updated += result.summary.players_updated
+                self.roster_rows_created += result.summary.rosters_created
+                self.roster_rows_updated += result.summary.rosters_updated
         else:
             self.schools_failed += 1
+            reason = result.failure_reason or "unknown_failure"
+            self.failures_by_reason[reason] = self.failures_by_reason.get(reason, 0) + 1

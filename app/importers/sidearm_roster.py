@@ -28,9 +28,17 @@ from app.schemas.roster_import import (
 from app.schemas.school_sources import SchoolSourceRow
 from app.services.imports import RosterImportService, SidearmRosterImportService
 from app.utils.roster_normalization import clean_text, split_name
+from app.utils.school_sources import normalize_vendor_verification_error
 
 DEFAULT_SOURCES_PATH = Path("data/schools.verified.csv")
+DEFAULT_FAILURE_REPORT_DIR = Path("data/import_runs")
 SIDEARM_VENDOR = "sidearm"
+SIDEARM_PARSE_FAILURE_REASONS = {
+    "supported_template_found_but_no_player_cards",
+    "person_card_template_detected_but_no_cards",
+    "legacy_template_detected_but_no_rows",
+    "no_supported_sidearm_roster_template_found",
+}
 
 
 @dataclass(frozen=True)
@@ -92,6 +100,11 @@ def fetch_roster_html(url: str) -> str:
             f"status={exc.response.status_code} url={url}",
         ) from exc
     except httpx.HTTPError as exc:
+        normalized_error = normalize_vendor_verification_error(exc)
+        if normalized_error == "ssl_certificate_verify_failed":
+            raise SidearmImportFailure("ssl_certificate_verify_failed", url) from exc
+        if normalized_error == "timeout":
+            raise SidearmImportFailure("timeout", url) from exc
         raise SidearmImportFailure("fetch_failed", str(exc)) from exc
     return response.text
 
@@ -149,16 +162,42 @@ def get_school_source_row(path: Path, school_id: str) -> SchoolSourceRow:
     raise ValueError(f"school not found in source file: {school_id}")
 
 
-def list_sidearm_school_source_rows(path: Path) -> list[SchoolSourceRow]:
-    rows = read_school_source_rows(path)
-    return [
-        row
-        for row in rows
-        if row.roster_vendor == SIDEARM_VENDOR
+def is_sidearm_school_eligible(row: SchoolSourceRow) -> bool:
+    return (
+        row.roster_vendor == SIDEARM_VENDOR
         and row.is_sidearm
         and row.import_enabled
         and row.roster_url is not None
-    ]
+    )
+
+
+def list_sidearm_school_source_rows(path: Path) -> list[SchoolSourceRow]:
+    rows = read_school_source_rows(path)
+    return [row for row in rows if is_sidearm_school_eligible(row)]
+
+
+def require_sidearm_school_source_row(path: Path, school_id: str) -> SchoolSourceRow:
+    school = get_school_source_row(path, school_id)
+    if is_sidearm_school_eligible(school):
+        return school
+    raise ValueError(
+        "school is not eligible for Sidearm import: must have roster_vendor=sidearm, "
+        "is_sidearm=true, import_enabled=true, and roster_url present"
+    )
+
+
+def select_sidearm_school_source_rows(
+    path: Path,
+    *,
+    school_id: str | None = None,
+    limit: int | None = None,
+) -> tuple[int, list[SchoolSourceRow]]:
+    eligible_rows = list_sidearm_school_source_rows(path)
+    if school_id is not None:
+        return len(eligible_rows), [require_sidearm_school_source_row(path, school_id)]
+    if limit is None:
+        return len(eligible_rows), eligible_rows
+    return len(eligible_rows), eligible_rows[:limit]
 
 
 def build_roster_import_service(session: Session) -> RosterImportService:
@@ -185,6 +224,7 @@ def run_import_school(
     season: int,
     url: str | None = None,
     fetch_html: Callable[[str], str] = fetch_roster_html,
+    dry_run: bool = False,
 ) -> RosterImportSummary:
     source_url = clean_text(url) or school.roster_url
     if source_url is None:
@@ -200,7 +240,10 @@ def run_import_school(
         summary = service.import_rows(school, rows, year=season, source_url=source_url)
         for diagnostic in parsed_roster.diagnostics:
             summary.add_error(None, diagnostic.as_message())
-        session.commit()
+        if dry_run:
+            session.rollback()
+        else:
+            session.commit()
         return summary
     except Exception:
         session.rollback()
@@ -215,39 +258,60 @@ def run_import(
     sources_path: Path = DEFAULT_SOURCES_PATH,
     url: str | None = None,
     fetch_html: Callable[[str], str] = fetch_roster_html,
+    dry_run: bool = False,
 ) -> RosterImportSummary:
-    school = get_school_source_row(sources_path, school_id)
-    return run_import_school(school=school, season=season, url=url, fetch_html=fetch_html)
+    school = require_sidearm_school_source_row(sources_path, school_id)
+    return run_import_school(
+        school=school,
+        season=season,
+        url=url,
+        fetch_html=fetch_html,
+        dry_run=dry_run,
+    )
 
 
 def run_import_all(
     season: int,
     sources_path: Path = DEFAULT_SOURCES_PATH,
+    school_id: str | None = None,
+    limit: int | None = None,
+    dry_run: bool = False,
+    failure_report_path: Path | None = None,
     fetch_html: Callable[[str], str] = fetch_roster_html,
     import_school: Callable[
-        [SchoolSourceRow, int, str | None, Callable[[str], str]], RosterImportSummary
+        [SchoolSourceRow, int, str | None, Callable[[str], str], bool], RosterImportSummary
     ] = run_import_school,
     progress_callback: Callable[[int, int, SchoolSourceRow], None] | None = None,
 ) -> SidearmBatchImportSummary:
-    schools = list_sidearm_school_source_rows(sources_path)
+    schools_seen = len(read_school_source_rows(sources_path))
+    schools_eligible, schools = select_sidearm_school_source_rows(
+        sources_path,
+        school_id=school_id,
+        limit=limit,
+    )
     summary = SidearmBatchImportSummary(
-        schools_seen=len(read_school_source_rows(sources_path)),
+        schools_seen=schools_seen,
+        schools_eligible=schools_eligible,
+        schools_attempted=len(schools),
         schools_selected=len(schools),
+        dry_run=dry_run,
     )
 
     for index, school in enumerate(schools, start=1):
         if progress_callback is not None:
             progress_callback(index, len(schools), school)
         try:
-            school_summary = import_school(school, season, None, fetch_html)
+            school_summary = import_school(school, season, None, fetch_html, dry_run)
         except Exception as exc:  # noqa: BLE001
+            failure_reason, failure_detail = _classify_import_exception(exc)
             summary.add_result(
                 SidearmBatchSchoolResult(
                     school_id=school.school_id,
                     school_name=school.school_name,
                     source_url=school.roster_url,
                     success=False,
-                    error=str(exc),
+                    failure_reason=failure_reason,
+                    error=failure_detail,
                 )
             )
             continue
@@ -262,24 +326,32 @@ def run_import_all(
             )
         )
 
+    if summary.schools_failed > 0:
+        report_path = failure_report_path or default_failure_report_path(season)
+        write_failure_report(summary, report_path, season=season)
+
     return summary
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Import verified Sidearm baseball rosters for one school or all eligible schools."
+            "Import verified Sidearm baseball rosters for one school or a controlled batch."
         )
     )
-    target_group = parser.add_mutually_exclusive_group(required=True)
-    target_group.add_argument(
+    parser.add_argument(
         "--school-id",
         help="School ID from the source CSV, such as S66",
     )
-    target_group.add_argument(
+    parser.add_argument(
         "--all-schools",
         action="store_true",
         help="Import all verified, enabled Sidearm schools from the source CSV.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Limit batch imports to the first N verified, enabled Sidearm schools.",
     )
     parser.add_argument(
         "--season",
@@ -288,8 +360,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Integer season year, such as 2026",
     )
     parser.add_argument(
+        "--schools-csv",
         "--sources-file",
         type=Path,
+        dest="sources_file",
         default=DEFAULT_SOURCES_PATH,
         help=f"School source CSV path, default: {DEFAULT_SOURCES_PATH}",
     )
@@ -297,19 +371,38 @@ def build_parser() -> argparse.ArgumentParser:
         "--url",
         help="Optional roster URL override. Defaults to the roster_url from the source CSV.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and simulate imports, then roll back database changes.",
+    )
+    parser.add_argument(
+        "--failure-report-path",
+        type=Path,
+        help="Optional JSON path for batch failure details.",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.school_id is None and not args.all_schools and args.limit is None:
+        parser.error("choose --school-id, --limit, or --all-schools")
     if args.all_schools and args.url:
         parser.error("--url can only be used with --school-id")
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be greater than zero")
+    if args.school_id is not None and args.limit is not None:
+        parser.error("--limit cannot be used with --school-id")
 
-    if args.all_schools:
+    if args.school_id is None:
         batch_summary = run_import_all(
             season=args.season,
             sources_path=args.sources_file,
+            limit=None if args.all_schools else args.limit,
+            dry_run=args.dry_run,
+            failure_report_path=args.failure_report_path,
             progress_callback=_print_batch_progress,
         )
         output = _build_batch_cli_summary(batch_summary)
@@ -319,8 +412,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             season=args.season,
             sources_path=args.sources_file,
             url=args.url,
+            dry_run=args.dry_run,
         )
-        output = summary.model_dump()
+        output = _build_single_cli_summary(summary, dry_run=args.dry_run)
     print(json.dumps(output, indent=2))
     return 0
 
@@ -334,42 +428,107 @@ def _print_batch_progress(index: int, total: int, school: SchoolSourceRow) -> No
 
 
 def _build_batch_cli_summary(summary: SidearmBatchImportSummary) -> dict[str, object]:
-    aggregate_fields = (
-        "rows_seen",
-        "rows_imported",
-        "rows_skipped",
-        "players_created",
-        "players_updated",
-        "colleges_created",
-        "positions_created",
-        "high_schools_created",
-        "rosters_created",
-        "rosters_updated",
-    )
-    totals = {field: 0 for field in aggregate_fields}
-    failed_schools: list[dict[str, str]] = []
-
-    for result in summary.results:
-        if result.summary is not None:
-            for field in aggregate_fields:
-                totals[field] += getattr(result.summary, field)
-        if not result.success:
-            failed_schools.append(
-                {
-                    "school_id": result.school_id,
-                    "school_name": result.school_name,
-                    "error": result.error or "unknown error",
-                }
-            )
-
+    failed_schools = [
+        {
+            "school_id": result.school_id,
+            "school_name": result.school_name,
+            "reason": result.failure_reason or "unknown_failure",
+            "error": result.error or "unknown error",
+        }
+        for result in summary.results
+        if not result.success
+    ]
     return {
+        "dry_run": summary.dry_run,
         "schools_seen": summary.schools_seen,
+        "schools_eligible": summary.schools_eligible,
+        "schools_attempted": summary.schools_attempted,
         "schools_selected": summary.schools_selected,
         "schools_imported": summary.schools_imported,
         "schools_failed": summary.schools_failed,
-        **totals,
+        "players_seen": summary.players_seen,
+        "players_imported": summary.players_imported,
+        "players_updated": summary.players_updated,
+        "roster_rows_created": summary.roster_rows_created,
+        "roster_rows_updated": summary.roster_rows_updated,
+        "failures_by_reason": summary.failures_by_reason,
+        "failure_report_path": summary.failure_report_path,
         "failed_schools": failed_schools,
     }
+
+
+def _build_single_cli_summary(summary: RosterImportSummary, *, dry_run: bool) -> dict[str, object]:
+    return {
+        "dry_run": dry_run,
+        "players_seen": summary.rows_seen,
+        "players_imported": summary.rows_imported,
+        "players_updated": summary.players_updated,
+        "roster_rows_created": summary.rosters_created,
+        "roster_rows_updated": summary.rosters_updated,
+        "errors": [error.model_dump() for error in summary.errors],
+    }
+
+
+def default_failure_report_path(season: int) -> Path:
+    return DEFAULT_FAILURE_REPORT_DIR / f"sidearm_roster_failures_{season}.json"
+
+
+def write_failure_report(
+    summary: SidearmBatchImportSummary,
+    path: Path,
+    *,
+    season: int,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    failures = [
+        {
+            "school_id": result.school_id,
+            "school_name": result.school_name,
+            "source_url": result.source_url,
+            "reason": result.failure_reason,
+            "error": result.error,
+        }
+        for result in summary.results
+        if not result.success
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "season": season,
+                "dry_run": summary.dry_run,
+                "schools_failed": summary.schools_failed,
+                "failures_by_reason": summary.failures_by_reason,
+                "failures": failures,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary.failure_report_path = str(path)
+
+
+def _classify_import_exception(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, SidearmImportFailure):
+        if exc.reason == "http_404":
+            return "stale_url_or_not_found", str(exc)
+        if exc.reason == "fetch_failed":
+            normalized_error = normalize_vendor_verification_error(exc)
+            if normalized_error == "ssl_certificate_verify_failed":
+                return "ssl_certificate_verify_failed", str(exc)
+            if normalized_error == "timeout":
+                return "timeout", str(exc)
+            return "fetch_failed", str(exc)
+        if exc.reason in SIDEARM_PARSE_FAILURE_REASONS:
+            return exc.reason, str(exc)
+        return exc.reason, str(exc)
+
+    normalized_error = normalize_vendor_verification_error(exc)
+    if normalized_error == "ssl_certificate_verify_failed":
+        return "ssl_certificate_verify_failed", str(exc)
+    if normalized_error == "timeout":
+        return "timeout", str(exc)
+    return "unexpected_error", str(exc)
 
 
 def _collect_title_diagnostics(soup: BeautifulSoup, season: int) -> list[SidearmParseDiagnostic]:
